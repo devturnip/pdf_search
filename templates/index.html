@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Search</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PDF Search</h1>
+            <div id="status" class="status">Loading...</div>
+        </header>
+
+        <div class="search-controls">
+            <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="exact">Exact</button>
+                <button class="mode-btn" data-mode="fuzzy">Fuzzy</button>
+                <button class="mode-btn" data-mode="semantic">Semantic</button>
+                <button class="mode-btn" data-mode="image">Image</button>
+            </div>
+
+            <div class="search-inputs">
+                <input type="text" id="queryInput" placeholder="Search in PDFs..." autocomplete="off">
+                <input type="file" id="imageInput" accept="image/*" style="display:none">
+                <button id="searchBtn">Search</button>
+                <button id="reindexBtn">Re-index</button>
+                <button id="managePdfsBtn">Manage PDFs</button>
+            </div>
+        </div>
+
+        <div id="pdfManager" class="pdf-manager" style="display:none">
+            <div class="pdf-manager-header">
+                <h2>PDF Library</h2>
+                <div class="upload-wrapper">
+                    <input type="file" id="pdfUploadInput" accept=".pdf" style="display:none">
+                    <button id="uploadPdfBtn" class="btn-secondary">+ Upload PDF</button>
+                </div>
+            </div>
+            <div id="pdfList" class="pdf-list"></div>
+        </div>
+
+        <div id="resultsInfo" class="results-info"></div>
+
+        <div id="resultsGrid" class="results-grid"></div>
+    </div>
+
+    <div id="imageModal" class="modal">
+        <span class="modal-close">&times;</span>
+        <img class="modal-content" id="modalImg">
+        <div class="modal-caption" id="modalCaption"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
