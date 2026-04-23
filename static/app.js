@@ -16,9 +16,11 @@ const modalImg = document.getElementById('modalImg');
 const modalCaption = document.getElementById('modalCaption');
 const modalHighlightOverlay = document.getElementById('modalHighlightOverlay');
 const modalClose = document.querySelector('.modal-close');
+const taskStatusEl = document.getElementById('taskStatus');
 
 let currentMode = 'exact';
 let pdfManagerOpen = false;
+let taskPollInterval = null;
 
 async function loadStatus() {
     try {
@@ -167,15 +169,45 @@ modal.addEventListener('click', (e) => {
     }
 });
 
+/* Background task polling */
+function startTaskPolling(taskId, onComplete) {
+    if (taskPollInterval) clearInterval(taskPollInterval);
+    taskStatusEl.style.display = 'block';
+    taskStatusEl.style.color = '#075985';
+    taskStatusEl.textContent = 'Task queued...';
+
+    taskPollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/tasks/${taskId}`);
+            const task = await res.json();
+            taskStatusEl.textContent = `Task ${task.type}: ${task.message}`;
+
+            if (task.status === 'completed') {
+                clearInterval(taskPollInterval);
+                taskStatusEl.style.display = 'none';
+                if (onComplete) onComplete(task);
+            } else if (task.status === 'failed') {
+                clearInterval(taskPollInterval);
+                taskStatusEl.style.color = '#dc2626';
+                taskStatusEl.textContent = `Task failed: ${task.error}`;
+            }
+        } catch (e) {
+            // continue polling
+        }
+    }, 2000);
+}
+
 reindexBtn.addEventListener('click', async () => {
     reindexBtn.disabled = true;
-    reindexBtn.textContent = 'Indexing...';
+    reindexBtn.textContent = 'Queueing...';
     try {
         const res = await fetch('/api/reindex', { method: 'POST' });
         const data = await res.json();
-        alert(`Re-indexed ${data.total_pages} pages.`);
-        loadStatus();
-        if (pdfManagerOpen) loadPdfList();
+        startTaskPolling(data.task_id, (task) => {
+            alert(`Re-indexed ${task.result.total_pages} pages.`);
+            loadStatus();
+            if (pdfManagerOpen) loadPdfList();
+        });
     } catch (e) {
         alert('Re-index failed: ' + e.message);
     } finally {
@@ -242,9 +274,11 @@ async function deletePdf(name) {
         const res = await fetch(`/api/pdfs/${encodeURIComponent(name)}`, { method: 'DELETE' });
         const data = await res.json();
         if (res.ok) {
-            alert(data.message);
-            loadPdfList();
-            loadStatus();
+            startTaskPolling(data.task_id, (task) => {
+                alert(task.result.message);
+                loadPdfList();
+                loadStatus();
+            });
         } else {
             alert('Delete failed: ' + (data.detail || data.message));
         }

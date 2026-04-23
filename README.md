@@ -183,13 +183,34 @@ Downloads the specified PDF file.
 DELETE /api/pdfs/{pdf_name}
 ```
 
-Deletes the PDF file, all associated thumbnails, and rebuilds the indices.
+Deletes the PDF file, all associated thumbnails, and rebuilds the indices **in the background**. Returns a `task_id` for polling.
 
 ```http
 POST /api/reindex
 ```
 
-Triggers incremental re-indexing of all PDFs in the `pdfs/` folder.
+Triggers incremental re-indexing of all PDFs in the `pdfs/` folder **in the background**. Returns a `task_id` for polling.
+
+```http
+GET /api/tasks/{task_id}
+```
+
+Returns the status of a background task:
+
+```json
+{
+  "id": "...",
+  "type": "reindex",
+  "status": "running",
+  "message": "Running",
+  "result": null,
+  "error": null,
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+Status values: `queued`, `running`, `completed`, `failed`.
 
 ---
 
@@ -200,6 +221,7 @@ Triggers incremental re-indexing of all PDFs in the `pdfs/` folder.
 ├── app/
 │   ├── __init__.py
 │   ├── main.py           # FastAPI routes
+│   ├── tasks.py          # Background task manager
 │   ├── ingestion.py      # PDF text extraction, OCR, thumbnail generation
 │   ├── index.py          # FAISS semantic + CLIP index management
 │   ├── models.py         # Pydantic request/response schemas
@@ -251,7 +273,7 @@ The `data/` directory is mounted as a Docker volume. Thumbnails, extracted page 
 |------------|---------|
 | **Single-machine only** | FAISS indices and ML models live in memory on one container. No horizontal scaling or distributed search. |
 | **Memory-bound** | All text embeddings, image embeddings, and indices are held in RAM. Expect ~2–4 GB for ~1,000 pages; scales linearly. |
-| **Synchronous indexing** | Re-indexing rebuilds FAISS indices synchronously and blocks the API. Large catalogs can take several minutes during which search is unavailable. |
+| **Synchronous indexing** | Re-indexing rebuilds FAISS indices in a background thread. The API no longer blocks, but only one indexing task runs at a time. |
 | **No incremental FAISS updates** | Adding one new PDF triggers a full rebuild of both the semantic text and CLIP image FAISS indices. |
 | **OCR quality varies** | Tesseract struggles with poor scans, handwritten text, complex multi-column layouts, or low-resolution images. Pages that required OCR do not have highlight boxes. |
 | **Page-level only** | Search returns individual pages, not consolidated document-level results. There is no "open PDF at page N" feature. |
@@ -259,7 +281,6 @@ The `data/` directory is mounted as a Docker volume. Thumbnails, extracted page 
 | **No authentication** | The app has no user accounts or access control. Anyone with network access can upload, delete, or search all PDFs. |
 | **Semantic model limits** | `all-MiniLM-L6-v2` is fast and small but less nuanced than larger models (e.g., `all-mpnet-base-v2` or GPT-based embeddings). |
 | **CLIP image search limits** | Image similarity is based on high-level visual concepts, not fine-grained detail. It may miss small objects or precise text matches. |
-| **No background worker / queue** | There is no task queue. OCR, embedding generation, and index building all happen in the main request thread. |
 
 ---
 

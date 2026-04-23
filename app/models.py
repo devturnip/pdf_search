@@ -57,3 +57,18 @@ class UploadResponse(BaseModel):
 class DeleteResponse(BaseModel):
     status: str
     message: str
+
+class TaskResponse(BaseModel):
+    status: str
+    task_id: str
+    message: str
+
+class TaskStatus(BaseModel):
+    id: str
+    type: str
+    status: str
+    message: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+    created_at: str
+    updated_at: str

@@ -15,7 +15,8 @@ import rapidfuzz
 from app.config import THUMBNAILS_DIR, BASE_DIR, PDFS_DIR
 from app.ingestion import IngestionPipeline
 from app.index import SearchIndex
-from app.models import TextSearchRequest, SearchResponse, PageResult, IndexStatus, PdfListResponse, PdfInfo, UploadResponse, DeleteResponse, HighlightBox
+from app.models import TextSearchRequest, SearchResponse, PageResult, IndexStatus, PdfListResponse, PdfInfo, UploadResponse, DeleteResponse, HighlightBox, TaskResponse, TaskStatus
+from app.tasks import TaskManager
 
 app = FastAPI(title="PDF Search")
 
@@ -29,6 +30,7 @@ templates = Jinja2Templates(directory="templates")
 pipeline = IngestionPipeline()
 search_index = SearchIndex()
 index_lock = threading.Lock()
+task_manager = TaskManager(max_workers=1)
 
 
 def startup_indexing():
@@ -79,6 +81,48 @@ def _get_highlights(page: dict, query: str, mode: str) -> List[HighlightBox]:
 @app.on_event("startup")
 def on_startup():
     startup_indexing()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    task_manager.shutdown()
+
+
+def _do_reindex():
+    global pipeline, search_index
+    with index_lock:
+        pipeline = IngestionPipeline()
+        pages = pipeline.ingest()
+        search_index = SearchIndex()
+        search_index.load_models()
+        search_index.build(pages)
+    return {"total_pages": len(pages)}
+
+
+def _do_delete(pdf_name: str):
+    global search_index
+    pdf_path = PDFS_DIR / pdf_name
+    if not pdf_path.exists() or not pdf_path.is_file():
+        raise FileNotFoundError("PDF not found")
+
+    with index_lock:
+        pdf_path.unlink()
+        prefix = pdf_name + "_"
+        for img_file in THUMBNAILS_DIR.iterdir():
+            if img_file.name.startswith(prefix) and img_file.suffix == ".png":
+                img_file.unlink()
+
+        pipeline.pages_data = [p for p in pipeline.pages_data if p["pdf_name"] != pdf_name]
+        if pdf_name in pipeline.manifest.get("pdfs", {}):
+            del pipeline.manifest["pdfs"][pdf_name]
+        pipeline._save_pages_data()
+        pipeline._save_manifest()
+
+        search_index = SearchIndex()
+        search_index.load_models()
+        search_index.build(pipeline.pages_data)
+
+    return {"message": f"Deleted {pdf_name}"}
 
 
 @app.get("/")
@@ -247,47 +291,26 @@ def upload_pdf(file: UploadFile = File(...)):
     )
 
 
-@app.delete("/api/pdfs/{pdf_name}", response_model=DeleteResponse)
+@app.delete("/api/pdfs/{pdf_name}", response_model=TaskResponse)
 def delete_pdf(pdf_name: str):
-    """Delete a PDF and all associated data, then rebuild indices."""
-    global search_index
-
+    """Delete a PDF and all associated data in the background."""
     pdf_path = PDFS_DIR / pdf_name
     if not pdf_path.exists() or not pdf_path.is_file():
         raise HTTPException(status_code=404, detail="PDF not found")
 
-    with index_lock:
-        # 1. Delete the PDF file
-        pdf_path.unlink()
-
-        # 2. Delete thumbnails and full images for this PDF
-        prefix = pdf_name + "_"
-        for img_file in THUMBNAILS_DIR.iterdir():
-            if img_file.name.startswith(prefix) and img_file.suffix == ".png":
-                img_file.unlink()
-
-        # 3. Remove from pages_data and manifest
-        pipeline.pages_data = [p for p in pipeline.pages_data if p["pdf_name"] != pdf_name]
-        if pdf_name in pipeline.manifest.get("pdfs", {}):
-            del pipeline.manifest["pdfs"][pdf_name]
-        pipeline._save_pages_data()
-        pipeline._save_manifest()
-
-        # 4. Rebuild indices from remaining pages
-        search_index = SearchIndex()
-        search_index.load_models()
-        search_index.build(pipeline.pages_data)
-
-    return DeleteResponse(status="ok", message=f"Deleted {pdf_name}")
+    task_id = task_manager.submit("delete", _do_delete, pdf_name)
+    return TaskResponse(status="ok", task_id=task_id, message=f"Deleting {pdf_name}")
 
 
-@app.post("/api/reindex")
+@app.post("/api/reindex", response_model=TaskResponse)
 def reindex():
-    global pipeline, search_index
-    with index_lock:
-        pipeline = IngestionPipeline()
-        pages = pipeline.ingest()
-        search_index = SearchIndex()
-        search_index.load_models()
-        search_index.build(pages)
-    return {"status": "ok", "total_pages": len(pages)}
+    task_id = task_manager.submit("reindex", _do_reindex)
+    return TaskResponse(status="ok", task_id=task_id, message="Re-index started")
+
+
+@app.get("/api/tasks/{task_id}", response_model=TaskStatus)
+def get_task(task_id: str):
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskStatus(**task)
