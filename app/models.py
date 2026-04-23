@@ -9,6 +9,13 @@ class TextSearchRequest(BaseModel):
 class ImageSearchRequest(BaseModel):
     top_k: int = 20
 
+class HighlightBox(BaseModel):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    text: str
+
 class PageResult(BaseModel):
     pdf_name: str
     page_num: int
@@ -16,6 +23,9 @@ class PageResult(BaseModel):
     text_snippet: str
     thumbnail_url: str
     full_image_url: str
+    highlights: List[HighlightBox] = []
+    page_width: float = 0
+    page_height: float = 0
 
 class SearchResponse(BaseModel):
     results: List[PageResult]

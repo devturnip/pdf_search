@@ -27,11 +27,23 @@ def get_pdf_hash(pdf_path: Path) -> str:
     return h.hexdigest()
 
 
-def extract_text_from_page(doc: fitz.Document, page_num: int) -> str:
-    """Extract text directly from a PDF page."""
+def extract_text_from_page(doc: fitz.Document, page_num: int) -> tuple:
+    """Extract text, word bounding boxes, and page dimensions from a PDF page."""
     page = doc.load_page(page_num)
-    text = page.get_text()
-    return text.strip()
+    text = page.get_text().strip()
+    rect = page.rect
+    words = page.get_text("words")
+    word_bboxes = []
+    for w in words:
+        x0, y0, x1, y1, word_text, *_ = w
+        word_bboxes.append({
+            "text": word_text,
+            "x0": round(x0, 2),
+            "y0": round(y0, 2),
+            "x1": round(x1, 2),
+            "y1": round(y1, 2),
+        })
+    return text, word_bboxes, rect.width, rect.height
 
 
 def ocr_page(pdf_path: Path, page_num: int) -> str:
@@ -115,9 +127,11 @@ class IngestionPipeline:
 
         doc = fitz.open(pdf_path)
         for page_num in range(len(doc)):
-            text = extract_text_from_page(doc, page_num)
+            text, word_bboxes, page_width, page_height = extract_text_from_page(doc, page_num)
             if len(text) < MIN_TEXT_LENGTH_FOR_OCR_FALLBACK:
                 text = ocr_page(pdf_path, page_num)
+                # OCR doesn't give us word positions; leave bboxes empty
+                word_bboxes = []
 
             thumb_filename = f"{pdf_name}_{page_num}.png"
             thumb_path = THUMBNAILS_DIR / thumb_filename
@@ -136,6 +150,9 @@ class IngestionPipeline:
                 "pdf_name": pdf_name,
                 "page_num": page_num,
                 "text": text,
+                "word_bboxes": word_bboxes,
+                "page_width": round(page_width, 2),
+                "page_height": round(page_height, 2),
                 "thumbnail_path": str(thumb_path.relative_to(Path(__file__).resolve().parent.parent)),
                 "full_image_path": str(full_path.relative_to(Path(__file__).resolve().parent.parent)),
             }

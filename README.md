@@ -253,13 +253,10 @@ The `data/` directory is mounted as a Docker volume. Thumbnails, extracted page 
 | **Memory-bound** | All text embeddings, image embeddings, and indices are held in RAM. Expect ~2–4 GB for ~1,000 pages; scales linearly. |
 | **Synchronous indexing** | Re-indexing rebuilds FAISS indices synchronously and blocks the API. Large catalogs can take several minutes during which search is unavailable. |
 | **No incremental FAISS updates** | Adding one new PDF triggers a full rebuild of both the semantic text and CLIP image FAISS indices. |
-| **No concurrent indexing safety** | Simultaneous re-index requests (or upload + re-index races) can corrupt global state since there is no locking mechanism. |
-| **OCR quality varies** | Tesseract struggles with poor scans, handwritten text, complex multi-column layouts, or low-resolution images. |
+| **OCR quality varies** | Tesseract struggles with poor scans, handwritten text, complex multi-column layouts, or low-resolution images. Pages that required OCR do not have highlight boxes. |
 | **Page-level only** | Search returns individual pages, not consolidated document-level results. There is no "open PDF at page N" feature. |
-| **No in-page highlighting** | Results show a text snippet but do not highlight the matching terms on the rendered page image. |
 | **Brute-force fuzzy search** | Fuzzy mode scans every indexed page with RapidFuzz. It works fine for thousands of pages but will slow down at 10,000+ pages. |
 | **No authentication** | The app has no user accounts or access control. Anyone with network access can upload, delete, or search all PDFs. |
-| **Docker root permissions** | The container runs as root; files written to the mounted `pdfs/` and `data/` directories are owned by root on the host. |
 | **Semantic model limits** | `all-MiniLM-L6-v2` is fast and small but less nuanced than larger models (e.g., `all-mpnet-base-v2` or GPT-based embeddings). |
 | **CLIP image search limits** | Image similarity is based on high-level visual concepts, not fine-grained detail. It may miss small objects or precise text matches. |
 | **No background worker / queue** | There is no task queue. OCR, embedding generation, and index building all happen in the main request thread. |

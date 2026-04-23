@@ -14,6 +14,7 @@ const modeBtns = document.querySelectorAll('.mode-btn');
 const modal = document.getElementById('imageModal');
 const modalImg = document.getElementById('modalImg');
 const modalCaption = document.getElementById('modalCaption');
+const modalHighlightOverlay = document.getElementById('modalHighlightOverlay');
 const modalClose = document.querySelector('.modal-close');
 
 let currentMode = 'exact';
@@ -104,8 +105,12 @@ function renderResults(data) {
     data.results.forEach(r => {
         const card = document.createElement('div');
         card.className = 'result-card';
+        const highlightHtml = buildHighlightOverlay(r.highlights, r.page_width, r.page_height);
         card.innerHTML = `
-            <img src="${r.thumbnail_url}" alt="Page ${r.page_num + 1}" loading="lazy">
+            <div class="image-container">
+                <img src="${r.thumbnail_url}" alt="Page ${r.page_num + 1}" loading="lazy">
+                ${highlightHtml}
+            </div>
             <div class="result-meta">
                 <div class="pdf-name">${escapeHtml(r.pdf_name)}</div>
                 <div class="page-num">Page ${r.page_num + 1}</div>
@@ -113,26 +118,52 @@ function renderResults(data) {
                 <div class="snippet">${escapeHtml(r.text_snippet)}</div>
             </div>
         `;
-        card.addEventListener('click', () => openModal(r.full_image_url, `${r.pdf_name} — Page ${r.page_num + 1}`));
+        card.addEventListener('click', () => openModal(r.full_image_url, `${r.pdf_name} — Page ${r.page_num + 1}`, r.highlights, r.page_width, r.page_height));
         resultsGrid.appendChild(card);
     });
 }
 
-function openModal(src, caption) {
+function buildHighlightOverlay(highlights, pageWidth, pageHeight) {
+    if (!highlights || highlights.length === 0 || !pageWidth || !pageHeight) {
+        return '';
+    }
+    const boxes = highlights.map(h => {
+        const left = (h.x0 / pageWidth) * 100;
+        const top = (h.y0 / pageHeight) * 100;
+        const width = ((h.x1 - h.x0) / pageWidth) * 100;
+        const height = ((h.y1 - h.y0) / pageHeight) * 100;
+        return `<div class="highlight-box" style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;width:${width.toFixed(2)}%;height:${height.toFixed(2)}%;"></div>`;
+    }).join('');
+    return `<div class="highlight-overlay">${boxes}</div>`;
+}
+
+function openModal(src, caption, highlights, pageWidth, pageHeight) {
     modalImg.src = src;
     modalCaption.textContent = caption;
+    modalHighlightOverlay.innerHTML = '';
+    if (highlights && highlights.length > 0 && pageWidth && pageHeight) {
+        modalHighlightOverlay.innerHTML = highlights.map(h => {
+            const left = (h.x0 / pageWidth) * 100;
+            const top = (h.y0 / pageHeight) * 100;
+            const width = ((h.x1 - h.x0) / pageWidth) * 100;
+            const height = ((h.y1 - h.y0) / pageHeight) * 100;
+            return `<div class="highlight-box" style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;width:${width.toFixed(2)}%;height:${height.toFixed(2)}%;"></div>`;
+        }).join('');
+    }
     modal.classList.add('active');
 }
 
 modalClose.addEventListener('click', () => {
     modal.classList.remove('active');
     modalImg.src = '';
+    modalHighlightOverlay.innerHTML = '';
 });
 
 modal.addEventListener('click', (e) => {
     if (e.target === modal) {
         modal.classList.remove('active');
         modalImg.src = '';
+        modalHighlightOverlay.innerHTML = '';
     }
 });
 
